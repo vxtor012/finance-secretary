@@ -1,0 +1,11 @@
+{
+  "name": "thu-ky-tai-chinh-ai", "version": "0.1.0", "private": true, "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "wrangler dev", "test": "node --test --test-isolation=none test/*.test.js",
+    "check": "node scripts/check.js", "db:local": "wrangler d1 migrations apply finance --local",
+    "build": "wrangler deploy --dry-run --outdir build", "backup:verify": "node scripts/verify-backup.js",
+    "test:d1": "node scripts/test-d1.js"
+  },
+  "devDependencies": { "wrangler": "4.149.0", "miniflare": "5.20261006.1-alpha" }
+}

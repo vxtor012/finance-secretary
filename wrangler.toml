@@ -1,0 +1,28 @@
+name = "thu-ky-tai-chinh-ai"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+TIMEZONE = "Asia/Ho_Chi_Minh"
+AI_ENABLED = "false"
+AI_ORDER = "rules,cloudflare,gemma,gemini,groq,openrouter"
+AI_DAILY_LIMIT = "20"
+AUTO_BACKUP = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "finance"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Optional: uncomment only if using Workers AI, then set CLOUDFLARE_AI_MODEL.
+# [ai]
+# binding = "AI"
+
+[triggers]
+# Hourly: local 20:00 reports and reminders; retries and housekeeping.
+crons = ["0 * * * *"]
+
+[observability]
+enabled = false

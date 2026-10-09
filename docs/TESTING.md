@@ -79,6 +79,8 @@ Script: [`scripts/test-d1.js`](../scripts/test-d1.js).
 
 Miniflare chạy bundle Worker trên workerd với D1 local. Script nạp schema, gửi webhook, xác nhận và replay callback, kiểm tra số dư, kiểm tra rollback khi vượt hạn mức, rồi xuất JSON và phục hồi vào D1 local thứ hai.
 
+Schema và SQL khôi phục được tách bằng `unstable_splitSqlQuery` của phiên bản Wrangler đã khóa, rồi chạy qua D1 batch. Kiểm tra này bắt lỗi tách statement ở client; bộ phân tích SQL trên D1 remote vẫn cần kiểm tra trong môi trường staging khi phát hành. `npm run check` cũng bảo vệ định dạng LF và cách đặt ngoặc cho CASE trong migration.
+
 Toàn bộ outbound fetch được chuyển sang Worker Telegram mock. Không gửi tin nhắn thật hoặc gọi model bên ngoài.
 
 ## 4. Chạy một nhóm kiểm thử

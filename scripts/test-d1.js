@@ -5,6 +5,7 @@ import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {environment,update} from '../test/d1.js';
 import {snapshot} from '../src/telegram.js';
 import {verify} from './backup.js';
+import {unstable_splitSqlQuery} from 'wrangler';
 const {DB,...bindings}=environment(null);
 const mf=new Miniflare(convertV4MiniflareOptions({workers:[
   {name:'finance',modules:true,scriptPath:resolve('build/worker.js'),compatibilityDate:'2026-10-01',d1Databases:{DB:'finance-local',RESTORE:'finance-restore'},bindings,outboundService:'telegram-mock'},
@@ -13,14 +14,8 @@ const mf=new Miniflare(convertV4MiniflareOptions({workers:[
 try {
   const db=await mf.getD1Database('DB','finance'),schema=readFileSync('migrations/0001_ledger.sql','utf8');
   async function executeSQL(target,sql) {
-    let pending='';
-    for(const line of sql.split('\n')) {
-      pending+=line+'\n';
-      if(!line.trim().endsWith(';'))continue;
-      if(pending.trim().startsWith('CREATE TRIGGER') && pending.trim().includes('\n') && line.trim()!=='END;')continue;
-      await target.prepare(pending.trim()).run();pending='';
-    }
-    assert.equal(pending.trim(),'');
+    // Match the installed Wrangler's SQL splitting instead of a custom loader.
+    await target.batch(unstable_splitSqlQuery(sql).map(query=>target.prepare(query)));
   }
   await executeSQL(db,schema);
   const send=async payload=>{

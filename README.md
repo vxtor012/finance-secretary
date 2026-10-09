@@ -146,6 +146,8 @@ npx wrangler d1 create finance
 
 Thay `database_id` trong `wrangler.toml` bằng ID được trả về. Kiểm tra tên Worker và cấu hình trước khi triển khai.
 
+Giữ `binding = "DB"` vì Worker truy cập `env.DB`. Có thể đổi `database_name` theo tên database của bạn; dùng đúng tên đó trong các lệnh D1 bên dưới.
+
 ### 2. Thiết lập secrets
 
 Wrangler sẽ hỏi giá trị của từng secret:

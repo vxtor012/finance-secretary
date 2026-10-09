@@ -3,6 +3,12 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 const files=dir=>readdirSync(dir,{withFileTypes:true}).flatMap(x=>x.isDirectory()?files(join(dir,x.name)):[join(dir,x.name)]);
 let failures=0;
+for(const f of files('migrations').filter(f=>f.endsWith('.sql'))) {
+  const sql=readFileSync(f,'utf8');
+  if(sql.includes('\r') || /\bSELECT\s+CASE\b/i.test(sql)) {
+    console.error(f,'D1 compatibility: use LF and parenthesized SELECT (CASE ... END).');failures++;
+  }
+}
 for(const f of ['src','scripts','test'].flatMap(files).filter(f=>f.endsWith('.js'))) {
   const r=spawnSync(process.execPath,['--check',f],{encoding:'utf8'});if(r.status!==0){console.error(f,r.stderr||r.error?.message);failures++;}
 }

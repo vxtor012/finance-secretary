@@ -193,6 +193,23 @@ Cron hoặc update tiếp theo sẽ xử lý lại. Theo dõi trạng thái sau 
 
 ## 7. Xử lý sự cố thường gặp
 
+### Migration báo `incomplete input: SQLITE_ERROR`
+
+D1 remote có thể phân tích khác SQLite local với trigger nhiều dòng hoặc `CASE ... END` không được đặt trong ngoặc. Migration của dự án dùng LF, trigger trên một dòng và `SELECT (CASE ... END)` để tránh các dạng này. Giữ định dạng SQL qua `.gitattributes` và `.editorconfig`; `npm run check` kiểm tra LF và cách viết CASE. Xem [báo lỗi CASE trong trigger](https://github.com/cloudflare/workers-sdk/issues/4727) và [báo lỗi CRLF](https://github.com/cloudflare/workers-sdk/issues/14991).
+
+Khi gặp lỗi, kiểm tra trạng thái database trước khi chạy lại:
+
+```sh
+npx wrangler d1 migrations list finance --remote
+npx wrangler d1 execute finance --remote --command "SELECT name,type FROM sqlite_master WHERE type IN ('table','trigger','view') AND name NOT LIKE 'sqlite_%' ORDER BY type,name"
+```
+
+Thay `finance` bằng `database_name` thực tế. Nếu migration còn pending và chưa có các bảng nghiệp vụ (`accounts`, `transactions`, `postings`...), cập nhật file SQL tương thích rồi chạy lại `migrations apply`. Nếu đã có schema hoặc dữ liệu, không xóa bảng hoặc sửa migration đã áp dụng; kiểm tra bản sao và trạng thái trước khi chọn cách phục hồi.
+
+Giữ `binding = "DB"` trong cấu hình Worker, bất kể tên database. Sai binding sẽ khiến webhook không hoạt động dù migration thành công.
+
+### Bảng chẩn đoán
+
 | Hiện tượng | Kiểm tra | Hướng xử lý |
 | --- | --- | --- |
 | `/health` thành công nhưng bot im lặng | Webhook, owner ID, token, inbox/outbox | Kiểm tra cấu hình và job lỗi; health không kiểm tra Telegram |

@@ -3,8 +3,14 @@ name: finance-ledger
 description: Implement or review ledger, debt, reconciliation, credit and report changes in this personal Vietnamese finance bot.
 ---
 
-Read `docs/PRD.md`, `src/ledger.js` and the relevant SQL triggers first. Income/expense use system counterpart accounts; transfers and debt payments bypass them. Credit debt is a negative balance. Receivables are positive; payables negative; the debt table's remaining amount must match its ledger account.
+# Bảo trì nghiệp vụ sổ cái
 
-Design race-sensitive checks inside the same D1 batch as postings. Two simultaneous partial repayments must never overpay. A stale reconciliation must fail rather than overwrite later activity. Duplicate confirmation must append nothing. Use integer amounts, strict date/amount parsing and additive corrections.
+Đọc [PRD](../../../docs/PRD.md), [ledger](../../../src/ledger.js) và [migration](../../../migrations/0001_ledger.sql) cho nghiệp vụ cần sửa.
 
-Verify affected invariants through `test/ledger.test.js` and the D1 runtime test. Reporting tests should assert amounts after transfers, debt payments and reversals, rather than only matching output strings. Update backup restoration whenever a permanent table changes. Check a real export can be restored into an empty local database with the original balances and audit.
+Thu/chi dùng tài khoản hệ thống đối ứng; chuyển tiền và thanh toán công nợ không dùng các tài khoản đó. Thẻ và phải trả có số dư âm, phải thu có số dư dương. Remaining của khoản nợ phải khớp trị tuyệt đối số dư tài khoản nợ riêng.
+
+Đặt kiểm tra cạnh tranh trong cùng D1 batch với posting: hai thanh toán không thể trả vượt nợ, đối soát có số dư cũ phải bị từ chối và xác nhận lặp không tạo thêm bút toán. Dùng số tiền nguyên, parse ngày chặt chẽ và bút toán điều chỉnh mới thay vì sửa lịch sử.
+
+Kiểm tra kết quả bằng [ledger tests](../../../test/ledger.test.js). Với báo cáo, xác minh số tiền sau chuyển nội bộ, trả nợ và đảo giao dịch, không chỉ so khớp câu thông báo. Sửa schema cần cập nhật export/restore và kiểm tra phục hồi giữ đúng số dư, công nợ và audit.
+
+Chạy `npm test`, `npm run build` rồi `npm run test:d1` từ repository root cho thay đổi SQL hoặc luồng ghi sổ. Dùng [TESTING](../../../docs/TESTING.md) để chọn kiểm thử bổ sung.

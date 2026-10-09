@@ -3,10 +3,14 @@ name: telegram-worker
 description: Maintain this Telegram Worker's webhook authentication, AI adapters, durable jobs, scheduled reminders and delivery behavior.
 ---
 
-Read `src/worker.js`, `src/bot.js`, `src/scheduler.js` and `docs/OPERATIONS.md` for the path being changed. Authenticate before parsing the body; limit streaming body bytes; owner/private chat checks cover callbacks. Persist inbox before HTTP acknowledgement. Financial idempotency is enforced by SQL independently of Telegram delivery.
+# Bảo trì Telegram Worker
 
-Keep provider URLs fixed. Models and keys are configured, AI is disabled by default, rule parsing comes first. Reserve quota atomically before a request; bound attempts/timeouts and validate JSON. Provider instructions cannot authorize transactions. Chart PNGs are rendered inside the Worker, without third-party URLs.
+Đọc [worker](../../../src/worker.js), [bot](../../../src/bot.js), [scheduler](../../../src/scheduler.js) và [OPERATIONS](../../../docs/OPERATIONS.md) cho đường xử lý cần sửa.
 
-Test retries after a committed ledger mutation, malformed updates, unknown users, callback replay, provider timeout/invalid JSON and local UTC+7 period boundaries. Telegram messages have at-least-once delivery: a crash after send may duplicate a notification, but cannot duplicate the ledger. Keep that limitation explicit.
+Xác thực trước khi parse body, giới hạn số byte khi đọc stream và kiểm tra owner/private chat cho callback lẫn message. Lưu inbox trước HTTP acknowledgement. Chống ghi sổ trùng phải được SQL bảo vệ, độc lập với việc gửi Telegram thành công.
 
-Use dry-run build and local D1 for validation. A webhook-registration script performs an external write and needs explicit human authorization, even if a test credential file exists.
+Giữ endpoint provider cố định; model và key là cấu hình. AI mặc định tắt, rule parser trước AI, quota được trừ nguyên tử trước request. Giới hạn attempts và timeout, kiểm tra JSON trước khi tạo nháp. Chỉ dẫn provider không cấp quyền thực hiện giao dịch. Tạo PNG trong Worker, không đưa dữ liệu tài chính vào URL dịch vụ ngoài.
+
+Kiểm tra retry sau khi ledger đã commit, body sai, người dùng khác, callback replay, JSON provider sai/lỗi request và ranh giới lịch UTC+7. Giữ giới hạn delivery rõ: crash sau send có thể tạo thông báo lặp nhưng không được tạo bút toán lặp.
+
+Chạy dry-run build và [D1 runtime test](../../../scripts/test-d1.js) để xác minh. Script đăng ký webhook là thao tác bên ngoài và cần quyền từ người quản trị; sự tồn tại của file credential không tự cấp quyền đó.

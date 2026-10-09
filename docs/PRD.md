@@ -1,67 +1,205 @@
-# Đặc tả triển khai 0.1
+# Đặc tả sản phẩm và quy tắc nghiệp vụ
 
-Nguồn: yêu cầu triển khai ngày 2026-10-09, tham chiếu chat “Trợ lý tài chính AI”, ID `6ac89235-7338-83ec-bf73-c1ca0a08cdfb`. Nội dung assistant của chat không truy xuất được, chỉ có content-reference. Đây là đặc tả tái dựng; cần đối chiếu POP v1.1/PRD gốc khi có nội dung. Các yêu cầu rõ trong lời nhắn đã được triển khai; các giả định bên dưới không phải trích dẫn POP.
+Tài liệu mô tả hành vi của Thư ký Tài chính AI phiên bản 0.1. Dùng làm cơ sở phát triển tính năng, kiểm tra tính đúng đắn của sổ cái và đánh giá thay đổi.
 
-## Người dùng và cách ghi nhận
+Để cài đặt và sử dụng bot, bắt đầu tại [README](../README.md). Để vận hành hoặc khôi phục dữ liệu, xem [OPERATIONS](OPERATIONS.md).
 
-Một chủ sở hữu, một Telegram bot, một database. Chat tiếng Việt; tài khoản và danh mục do người dùng đặt tên. Đơn vị VND nguyên; giới hạn một giao dịch và số dư tuyệt đối mỗi tài khoản là 1.000 tỷ để đảm bảo số nguyên an toàn. Có thể theo dõi thiếu/âm số dư tiền mặt hoặc ngân hàng: bot không coi số dư chưa đối soát là tiền khả dụng thực tế. Tài khoản cash mặc định tên “tiền mặt”; tài khoản mới bằng zero và reconciled_at=null.
+## 1. Mục tiêu và phạm vi
 
-Không có đăng ký nhiều người, app web, desktop hoặc mobile riêng. Telegram làm giao diện. Tin nhắn phi văn bản không parse. UTC+7 (Asia/Ho_Chi_Minh hoặc Asia/Bangkok), không đổi sang timezone DST. Ngày hạch toán là thời điểm xác nhận; chưa backdate, đa tiền tệ, lãi, đầu tư hoặc nhập OCR.
+Bot giúp một người quản lý thu chi, số dư và nghĩa vụ thanh toán trong chat riêng Telegram bằng tiếng Việt. Người dùng có thể ghi chép bằng câu ngắn hoặc lệnh có cấu trúc; mọi bút toán cần được xem lại và xác nhận.
 
-## Quy tắc sổ cái
+| Trong phạm vi | Ngoài phạm vi phiên bản 0.1 |
+| --- | --- |
+| Một chủ sở hữu, nhiều tài khoản | Nhiều người dùng hoặc chia sẻ sổ |
+| VND nguyên, múi giờ UTC+7 | Đa tiền tệ hoặc múi giờ có DST |
+| Thu chi, chuyển tiền, đối soát | Đồng bộ giao dịch ngân hàng |
+| Vay, cho vay, thanh toán từng phần | Lãi vay, xóa nợ, chuyển giao công nợ |
+| Khoản định kỳ hằng tháng | Lịch lặp tùy ý hoặc tự động trừ tiền |
+| Theo dõi thẻ, chốt dư nợ, nhắc trả | Phí, lãi, trả góp, thanh toán tối thiểu |
+| Báo cáo và xuất dữ liệu | Tư vấn đầu tư, OCR hoặc voice |
 
-Quy ước: số dư là tổng posting đã sealed. Cộng vào tài sản/receivable là tăng số dư; payable/credit mang số dư âm. Hai posting mỗi transaction, tổng bằng 0, độ lớn mỗi posting bằng transaction.amount. Trigger từ chối seal sai, vượt hạn mức thẻ, trả thẻ quá nợ hoặc số dư ngoài giới hạn. Transactions/postings/audit/debt_events đã ghi không được update/delete, ngoại trừ chuyển sealed 0→1 trong cùng batch.
+Thời điểm hạch toán là thời điểm xác nhận. Chưa hỗ trợ nhập lùi ngày. Giới hạn mỗi giao dịch và số dư tuyệt đối mỗi tài khoản là 1.000.000.000.000 VND.
 
-| Nghiệp vụ | Bút toán | Tác động báo cáo |
+## 2. Luồng người dùng
+
+### 2.1. Khởi tạo
+
+1. Chủ sở hữu cấu hình bot, database, webhook và Telegram user ID.
+2. Gửi `/start` hoặc `/help` trong chat riêng.
+3. Tạo tài khoản ngân hàng hoặc thẻ nếu cần. Tài khoản `tiền mặt` đã có sẵn.
+4. Đối soát từng tài khoản với số dư thực tế.
+
+Tài khoản mới bắt đầu ở 0 và có `reconciled_at=null`. Bot hiển thị **CHƯA ĐỐI SOÁT** cho đến khi người dùng xác nhận đối soát. Số dư này chỉ là số dư theo sổ, không được diễn giải thành tiền thực tế đang có.
+
+### 2.2. Ghi giao dịch
+
+1. Người dùng nhập thu, chi, chuyển tiền hoặc nghiệp vụ công nợ.
+2. Parser xác định nghiệp vụ; AI được thử khi parser theo quy tắc không hiểu và AI đã bật.
+3. Bot kiểm tra dữ liệu và lưu bản nháp có hạn 15 phút.
+4. Bot hiển thị nghiệp vụ, số tiền, tài khoản, danh mục và ghi chú.
+5. Người dùng chọn **Xác nhận** hoặc **Bỏ qua**.
+6. Khi xác nhận hợp lệ, bot ghi sổ và trả mã giao dịch.
+
+Tạo tài khoản, quản lý lịch lặp và xuất dữ liệu là lệnh quản lý; không tạo bút toán tài chính. Tạo khoản lặp không tự ghi chi.
+
+### 2.3. Sửa sai
+
+Thu, chi và chuyển tiền có thể được đảo bằng `/huy`. Bút toán gốc vẫn được giữ; bot tạo bản nháp bút toán đảo để xác nhận. Một giao dịch chỉ được đảo một lần.
+
+Phiên bản 0.1 chưa cho đảo công nợ, đối soát hoặc giao dịch thanh toán qua kỳ lặp. Không chỉnh trực tiếp database để sửa các nghiệp vụ này.
+
+## 3. Quy tắc sổ cái
+
+### 3.1. Quy ước số dư
+
+Số dư tài khoản là tổng các posting thuộc transaction đã `sealed=1`:
+
+- Tiền mặt, ngân hàng và khoản phải thu thường có số dư dương.
+- Thẻ tín dụng và khoản phải trả có số dư âm.
+- Tiền mặt và ngân hàng có thể âm khi sổ chưa phản ánh đủ số dư hoặc giao dịch; bot không áp dụng kiểm tra khả năng chi thực tế.
+- Thẻ phải có số dư từ `-credit_limit` đến 0.
+
+Mỗi transaction có đúng hai posting, tổng bằng 0 và trị tuyệt đối của mỗi posting bằng `transaction.amount`. Trigger kiểm tra các điều kiện này trước khi seal.
+
+Transaction đã seal, posting, audit và debt event được giữ bất biến. Chuyển trạng thái transaction từ chưa seal sang đã seal diễn ra trong cùng batch ghi sổ.
+
+### 3.2. Bút toán theo nghiệp vụ
+
+Trong bảng sau, `A` là số tiền giao dịch và `delta = số dư thực tế − số dư theo sổ`.
+
+| Nghiệp vụ | Bút toán | Tác động báo cáo thu chi |
 | --- | --- | --- |
-| Thu | tài khoản +A, @thu −A | thu +A |
-| Chi tiền/thẻ | tài khoản −A, @chi +A | chi +A |
-| Chuyển/rút ATM/trả thẻ | nguồn −A, đích +A | không thu/chi |
-| Vay | tiền +A, payable riêng −A | không thu/chi |
-| Cho vay | tiền −A, receivable riêng +A | không thu/chi |
-| Trả nợ | tiền −A, payable +A; remaining giảm A | không thu/chi |
-| Thu nợ | tiền +A, receivable −A; remaining giảm A | không thu/chi |
-| Đối soát | tài khoản +delta, @đối soát −delta | không thu/chi |
-| Đảo thu/chi/chuyển | đảo dấu hai posting gốc | điều chỉnh theo danh mục gốc ở kỳ đảo |
+| Thu | Tài khoản +A; `@thu` −A | Thu +A |
+| Chi | Tài khoản −A; `@chi` +A | Chi +A |
+| Chuyển nội bộ, rút ATM, trả thẻ | Nguồn −A; đích +A | Không tính thu chi |
+| Vay | Tiền +A; tài khoản phải trả riêng −A | Không tính thu chi |
+| Cho vay | Tiền −A; tài khoản phải thu riêng +A | Không tính thu chi |
+| Trả nợ | Tiền −A; tài khoản phải trả +A | Không tính thu chi |
+| Thu nợ | Tiền +A; tài khoản phải thu −A | Không tính thu chi |
+| Đối soát | Tài khoản +delta; `@đối soát` −delta | Không tính thu chi |
+| Đảo giao dịch | Đảo dấu hai posting gốc | Điều chỉnh tại kỳ đảo, giữ danh mục gốc |
 
-Đối soát chênh lệch 0 chỉ đánh dấu đã đối soát, thêm audit, không tạo transaction 0. Nháp đối soát giữ expected balance; xác nhận khi số dư đã khác sẽ thất bại, tránh ghi đè hoạt động mới. Không sửa bút toán gốc; reversal_of unique chỉ cho đảo một lần. Nháp đảo công nợ/đối soát/kỳ lặp bị từ chối để tránh lệch nghiệp vụ phụ thuộc.
+Ví dụ: mua đồ 500.000 đ bằng thẻ ghi chi 500.000 đ. Chuyển 500.000 đ từ ngân hàng để trả thẻ không ghi thêm chi tiêu.
 
-Mỗi khoản nợ một counterparty, principal, remaining, direction và due_date nullable. Cùng người vẫn có nhiều khoản riêng, mã nợ chỉ định rõ. Không hạn thì không gửi nhắc ngày trả. Thanh toán >remaining bị chặn bởi trigger, kể cả hai yêu cầu cùng lúc. Không ghi gộp vay mới với trả nợ cũ, không lãi/xóa nợ/chuyển công nợ.
+### 3.3. Đối soát
 
-Thẻ có credit_limit, statement_day và due_day 1–28; số dư từ -limit tới 0. Không cho rút tiền từ thẻ hoặc tạo thu/vay/thu nợ trực tiếp vào thẻ. Sao kê ghi dư nợ lịch sử tại 00:00 ngày sau ngày chốt, nhắc hạn trả trong cùng tháng nếu due_day>statement_day, ngược lại tháng sau. Số còn cần trả sao kê giảm bởi thanh toán sau chốt (đảo thanh toán tăng lại). Mua mới sau chốt không tăng sao kê đã đóng. Sao kê mới chứa dư nợ kỳ trước nên không cộng tất cả sao kê với nhau. Thông báo chỉ đại diện bản sao theo sổ cá nhân; phí/lãi/tối thiểu cần đối chiếu ngân hàng. Điều chỉnh/đối soát thẻ sau chốt không viết lại sao kê cũ.
+Bản nháp giữ số dư tại thời điểm lập nháp. Nếu số dư đã thay đổi trước khi xác nhận, giao dịch đối soát bị từ chối; người dùng cần nhập lại để xem chênh lệch mới.
 
-## Khoản lặp
+Khi `delta=0`, bot chỉ cập nhật thời điểm đối soát và audit, không tạo transaction có số tiền 0. Thời điểm đối soát là một dấu mốc lịch sử, không bảo đảm sổ luôn khớp ngân hàng sau đó.
 
-Recurring lưu tên, amount, account, category, day và thời điểm tạo. Occurrence unique theo recurring_id+due_date, state due/paid/skipped. Ngày đầu tiên là ngày lặp đầu tiên >=ngày tạo; không tự tạo kỳ trước lúc đăng ký. Cron tạo tới 3 ngày trước hạn, catch-up tối đa 12 tháng mỗi lần chạy nếu dịch vụ dừng lâu; lần sau tiếp tục. `/tralap` tạo draft expense gắn occurrence; guard atomic chỉ trả một lần. `/bolap` đánh dấu skipped, `/dunglap` ngừng sinh kỳ mới, giữ kỳ cũ đang chờ. Ghi chi thuê trọ tự do ngoài `/tralap` không tự đánh dấu kỳ đã trả; người dùng cần dùng lệnh đúng để tránh nhắc tiếp.
+## 4. Công nợ
 
-## Bot, AI và an toàn
+Mỗi khoản nợ có mã riêng, người liên quan, chiều vay/cho vay, số tiền gốc, số tiền còn lại và hạn trả tùy chọn.
 
-Header secret được so sánh qua SHA-256 và vòng so sánh cố định, trước khi đọc body. Body tối đa 16 KiB; câu nhập tối đa 1.000 ký tự. Chỉ owner trong private chat; callback cũng kiểm tra owner và chat. Inbox unique update_id; draft source_key unique; guard/state nằm trong batch ledger. Giới hạn 500 update hợp lệ mới/ngày UTC bằng trigger inbox_quota; duplicate cùng update_id không tốn thêm. Vượt giới hạn khiến webhook trả 503, Telegram có thể retry; không đổi sang dịch vụ tính phí.
+- Cùng một người có thể có nhiều khoản nợ độc lập.
+- Hạn trả dùng `YYYY-MM-DD`; `-` trong lệnh tương ứng với không hạn.
+- Mỗi lần thanh toán phải chỉ rõ mã nợ và đúng chiều trả/thu.
+- Thanh toán từng phần giảm `remaining`, không thay đổi `principal`.
+- Không được thanh toán vượt số còn lại, kể cả khi hai nháp được xác nhận gần như đồng thời.
+- Khoản nợ có `remaining=0` đã tất toán; lịch sử vẫn được giữ.
+- Khoản không hạn không nhận lời nhắc theo ngày trả.
 
-AI mặc định tắt. Rules trước AI; lệnh slash không hiểu không gửi provider. Adapter cố định endpoint, timeout; hai provider configured tối đa/lần, ngân sách ngày nguyên tử, không bypass xác nhận. AI chỉ income/expense/transfer và phải qua validation; account do model đề xuất vẫn cần tồn tại. Model có thể hiểu sai số tiền/mục đích: bản nháp được hiển thị để owner kiểm tra. Không cấp model quyền SQL, secrets, cloud deploy hoặc external tools. Báo cáo diễn giải deterministic để tiết kiệm và bảo vệ dữ liệu.
+Số dư tài khoản công nợ phải bằng `remaining` đối với phải thu và `-remaining` đối với phải trả. Mở khoản nợ và thanh toán đi qua tài khoản tiền mặt/ngân hàng, không dùng thẻ tín dụng.
 
-Inbox được lưu trước HTTP 200. Fetch background xử lý một inbox và hai outbox để giới hạn thời gian; cron xử lý backlog có giới hạn. Lease/retry chống hai worker cùng claim. Ledger+audit+outgoing acknowledgement atomic; gửi Telegram không atomic với database nên thông báo có thể lặp khi crash. Failed jobs giữ lại để kiểm tra, không xóa. Không log prompt/update/token/dữ liệu ledger. Xóa body vận hành đã xong sau 30 ngày; ledger, audit và guards giữ lâu dài. Credential không vào export.
+## 5. Khoản định kỳ
 
-## Báo cáo và backup
+Mỗi recurring lưu tên, số tiền, tài khoản, danh mục, ngày trong tháng và thời điểm tạo. Ngày hỗ trợ từ 1 đến 28.
 
-Manual tuần/tháng/năm hiện tại; auto kỳ đã đóng tại sáng đầu kỳ tiếp theo. Bảng nhóm thu/chi (tối đa 15 nhóm), PNG hai cột tổng và nhận xét về chênh lệch/tỷ lệ chi/thu. Số dư hiện tại và tổng công nợ được ghi rõ; tối đa 20 tài khoản trong báo cáo. Đảo chi ảnh hưởng kỳ đảo, không thay lịch sử kỳ cũ. Không có báo cáo dòng tiền đầy đủ hay biểu đồ phân loại nhiều tháng ở bản 0.1.
+Mỗi kỳ thanh toán có mã duy nhất theo khoản lặp và ngày đến hạn:
 
-Snapshot JSON v1: accounts, transactions, postings, debts, debt_events, audit, recurring, occurrences, credit_statements. D1 batch đọc nhất quán; loại inbox/outbox/drafts/guards/quota/secrets. Restore từ JSON vào database trống, chạy triggers và đối chiếu từng bảng. Backup không có dữ liệu chờ xác nhận; sau restore yêu cầu nhập lại draft. D1 SQL export là bản sao đầy đủ khác, nên có operational records và cần lưu riêng.
+| Trạng thái | Ý nghĩa |
+| --- | --- |
+| `due` | Chưa trả, còn nhận lời nhắc |
+| `paid` | Đã ghi một giao dịch chi qua `/tralap` |
+| `skipped` | Người dùng đã bỏ kỳ qua `/bolap` |
 
-## Mapping yêu cầu và kiểm chứng
+Kỳ đầu là ngày lặp đầu tiên không sớm hơn ngày đăng ký. Cron tạo kỳ khi còn tối đa ba ngày tới hạn. Sau gián đoạn, cron tạo bù tối đa 12 tháng mỗi lần chạy, rồi tiếp tục ở lần sau nếu cần.
 
-| Yêu cầu | Thành phần | Kiểm chứng |
+`/tralap` lập nháp chi gắn với kỳ. Kiểm tra trong cùng batch đảm bảo một kỳ chỉ trả được một lần. `/dunglap` ngừng tạo kỳ mới nhưng giữ các kỳ cũ chưa xử lý.
+
+Ghi chi thuê trọ bằng `/chi` không tự đánh dấu kỳ tương ứng đã trả. Muốn quản lý lời nhắc chính xác, dùng `/tralap` cho các kỳ đã đăng ký.
+
+## 6. Thẻ tín dụng
+
+Thẻ có hạn mức, ngày chốt và ngày trả từ 1 đến 28. Bot chặn chi vượt hạn mức, trả thẻ vượt dư nợ và chuyển/rút tiền từ thẻ.
+
+Sao kê được tạo từ số dư lịch sử tại 00:00 UTC+7 ngày sau ngày chốt. Hạn trả nằm trong cùng tháng nếu ngày trả lớn hơn ngày chốt; nếu không, hạn trả nằm ở tháng tiếp theo.
+
+Ví dụ: chốt ngày 10, trả ngày 25 thì giao dịch sau hết ngày 10 không làm tăng sao kê vừa chốt. Thanh toán sau chốt giảm số còn cần trả; đảo thanh toán làm tăng lại số đó.
+
+Sao kê mới chứa cả nợ mang sang từ kỳ trước. Không cộng các sao kê với nhau để tính tổng dư nợ. Đối soát sau chốt không viết lại sao kê đã tạo. Thông tin phí, lãi và số tiền tối thiểu phải đối chiếu với sao kê ngân hàng.
+
+## 7. Báo cáo
+
+### 7.1. Kỳ dữ liệu
+
+| Loại | Lệnh thủ công | Lịch tự động từ 08:00 UTC+7 |
 | --- | --- | --- |
-| Telegram tiếng Việt/chat-first | bot/domain/worker | handler và runtime D1 |
-| Cloudflare + D1 | wrangler.toml, migration | dry-run và local workerd |
-| Thu/chi/nhiều tài khoản/chuyển | ledger/postings | conservation/report totals |
-| Zero nhưng chưa đối soát | balances/reconciled_at | zero/stale/0-delta tests |
-| Công nợ simple/partial/no due | debts/debt_events | remaining/overpay rollback |
-| Recurring thuê/subscription | scheduler/occurrence guard | idempotent reminders/paid once |
-| Credit card | credit trigger/statements | limit/overpay/closing cutoff/reversed repayment |
-| Báo cáo tuần/tháng/năm | reports/chart/scheduler | UTC+7 boundaries/PNG inflate |
-| Gemma/CF/Gemini/Groq/OpenRouter | ai adapters | mocked endpoint/fallback/quota |
-| Chống trùng/audit/backup | unique keys/triggers/snapshot | duplicate callback/restore/corruption |
-| GitHub/README/CI/agents | package lock/workflow/skills | syntax/metadata/build |
+| Tuần | Tuần hiện tại, thứ Hai đến Chủ nhật | Thứ Hai, báo cáo tuần trước |
+| Tháng | Tháng hiện tại | Ngày 1, báo cáo tháng trước |
+| Năm | Năm hiện tại | Ngày 1/1, báo cáo năm trước |
 
-Kết nối thật Telegram, provider, dashboard quota, CPU production và GitHub Actions chưa kiểm chứng khi chưa có token/repository remote. Không triển khai production hoặc push GitHub trong nhiệm vụ này.
+Kỳ dùng mốc đầu bao gồm và mốc cuối không bao gồm. Báo cáo tự động chỉ được tạo trong ngày gửi tương ứng; chưa tạo bù nếu dịch vụ dừng trọn ngày đó.
+
+### 7.2. Nội dung
+
+- Tổng thu, tổng chi và chênh lệch trong kỳ.
+- Bảng tối đa 15 nhóm thu chi.
+- PNG hai cột tổng thu/chi; phần âm bị chặn ở 0 trên biểu đồ và vẫn được trình bày bằng số trong bảng.
+- Diễn giải theo quy tắc về chênh lệch và tỷ lệ chi/thu.
+- Số dư hiện tại của tối đa 20 tài khoản và trạng thái đối soát.
+- Tổng công nợ còn lại theo chiều phải thu/phải trả.
+
+Các tổng thu chi được tính từ posting tài khoản hệ thống, gồm cả bút toán đảo. Chuyển tiền, công nợ, trả thẻ và đối soát không làm tăng tổng thu chi. Chưa có báo cáo số dư cuối kỳ lịch sử hoặc báo cáo dòng tiền đầy đủ.
+
+## 8. AI và quyền truy cập
+
+AI mặc định tắt. Parser theo quy tắc luôn chạy trước; lệnh slash không hiểu không được gửi tới provider. AI chỉ đề xuất thu, chi hoặc chuyển tiền, không thực thi SQL hay công cụ.
+
+Một tin nhắn thử tối đa hai provider đã cấu hình. Mỗi request có timeout và tiêu thụ ngân sách gọi theo ngày UTC trước khi gửi. Kết quả phải có JSON hợp lệ, số tiền nguyên, nghiệp vụ được hỗ trợ và tài khoản tồn tại. Mọi đề xuất vẫn cần chủ sở hữu xác nhận.
+
+Webhook kiểm tra secret trước khi đọc body. Tin nhắn và callback chỉ được chấp nhận khi sender và private chat đều thuộc owner. Giới hạn body là 16 KiB, văn bản là 1.000 ký tự và số update hợp lệ mới là 500/ngày UTC. Update trùng ID không tiêu thụ thêm quota.
+
+Không ghi token, raw update, prompt hay dữ liệu sổ cái vào log ứng dụng. Khi AI bật, provider được chọn nhận nội dung tin nhắn cần phân tích. Báo cáo và biểu đồ không gửi dữ liệu tới AI.
+
+## 9. Mô hình dữ liệu
+
+| Bảng hoặc view | Vai trò |
+| --- | --- |
+| `accounts` | Tài khoản người dùng và tài khoản hệ thống |
+| `transactions`, `postings` | Giao dịch và bút toán bất biến |
+| `balances` | View số dư của các transaction đã seal |
+| `debts`, `debt_events` | Khoản nợ và sự kiện mở/thanh toán |
+| `recurring`, `recurring_occurrences` | Lịch lặp và từng kỳ thanh toán |
+| `credit_statements` | Dư nợ tại mốc chốt và hạn trả |
+| `audit` | Dấu vết thao tác nghiệp vụ |
+| `drafts`, `guards` | Nháp và điều kiện xác nhận nguyên tử |
+| `inbox`, `outbox` | Hàng đợi nhận/xử lý và gửi Telegram |
+| `request_usage`, `ai_usage` | Ngân sách update và request AI |
+
+Schema chi tiết nằm trong [migration 0001](../migrations/0001_ledger.sql).
+
+## 10. Tính toàn vẹn và lưu trữ
+
+Inbox được lưu trước HTTP 200. Xác nhận thực hiện điều kiện nháp, posting, cập nhật công nợ/kỳ lặp, seal, audit và thông báo ghi nhận trong cùng D1 batch. Nếu một bước thất bại, batch rollback.
+
+Khóa update ID, source key và điều kiện SQL chống ghi sổ trùng. Gửi Telegram không nằm trong transaction database nên thông báo có thể lặp khi retry sau sự cố. Inbox tối đa 5 lần thử, outbox tối đa 8 lần thử; tác vụ lỗi được giữ để xử lý.
+
+Body vận hành đã xử lý được dọn sau 30 ngày. Ledger, audit và guards được giữ lâu dài. JSON backup v1 gồm chín bảng nghiệp vụ, không có secrets, quota, inbox, outbox, drafts hoặc guards. Sau khôi phục JSON, cần lập lại các nháp chưa xác nhận.
+
+## 11. Tiêu chí nghiệm thu
+
+| Nhóm | Kết quả cần đạt |
+| --- | --- |
+| Ghi sổ | Hai posting cân bằng, số dư đúng, transaction cũ không bị sửa |
+| Chống trùng | Callback hoặc update lặp không tạo thêm bút toán |
+| Đối soát | Số dư zero vẫn chưa đối soát; nháp có số dư cũ bị từ chối |
+| Công nợ | Trả từng phần giảm đúng remaining; thanh toán vượt bị rollback |
+| Thẻ | Chi vào thẻ tính chi một lần; trả thẻ không tính chi; hạn mức được bảo vệ |
+| Khoản lặp | Không tự ghi chi; một kỳ chỉ có một lần thanh toán |
+| Báo cáo | Đúng ranh giới UTC+7 và loại trừ chuyển/nợ/đối soát |
+| AI | Có giới hạn, fallback, validation và xác nhận người dùng |
+| Khôi phục | JSON phục hồi được số dư, công nợ, các bảng nghiệp vụ và audit |
+| Quyền truy cập | Người khác hoặc group chat không đọc/ghi được sổ |
+
+Cách kiểm tra từng nhóm và phạm vi của môi trường giả lập được mô tả trong [TESTING](TESTING.md).
